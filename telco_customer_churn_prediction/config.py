@@ -1,4 +1,5 @@
 from pathlib import Path
+import mlflow
 
 from dotenv import load_dotenv
 from loguru import logger
@@ -30,3 +31,22 @@ try:
     logger.add(lambda msg: tqdm.write(msg, end=""), colorize=True)
 except ModuleNotFoundError:
     pass
+
+
+def configure_mlflow():
+    """
+    Configures MLflow to save runs to the project root 'mlruns' folder.
+    """
+    # 1. Define the path using the existing PROJ_ROOT
+    mlruns_dir = PROJ_ROOT / "mlruns"
+
+    # 2. Convert to URI format (file:///E:/...)
+    # Pathlib's .as_uri() handles the file:/// prefix and slashes automatically
+    tracking_uri = mlruns_dir.as_uri()
+
+    # 3. Set up MLflow
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow.set_experiment("Telco_Churn_Prediction_LKR")
+
+    # 4. Use the existing logger instead of print()
+    logger.info(f"MLflow configured. Tracking URI: {tracking_uri}")
