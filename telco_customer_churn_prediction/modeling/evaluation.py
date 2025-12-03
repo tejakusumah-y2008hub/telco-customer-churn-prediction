@@ -2,7 +2,12 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import classification_report, roc_auc_score, ConfusionMatrixDisplay
+from sklearn.metrics import (
+    classification_report,
+    roc_auc_score,
+    ConfusionMatrixDisplay,
+    confusion_matrix,
+)
 
 
 def advanced_churn_evaluation(
@@ -207,3 +212,16 @@ def run_sensitivity_analysis(model, X, y):
 
     # Output the comparison table
     print(pd.DataFrame(results))
+
+
+# Define a Python function that calculates profit from Truth/Prediction
+def profit_calculator(y_true, y_pred, ltv, cost, acceptance):
+    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+
+    revenue = tp * acceptance * ltv
+    marketing_spend = (
+        tp + fp
+    ) * cost  # We spend money on everyone we predicted as churn (TP + FP)
+
+    total_profit = revenue - marketing_spend
+    return total_profit
