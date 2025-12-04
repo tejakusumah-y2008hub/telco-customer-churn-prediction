@@ -20,6 +20,7 @@ def advanced_churn_evaluation(
     cost_offer=20,  # Cost of incentive ($)
     cost_contact=1,  # Cost of contact ($)
     acceptance_rate=0.5,  # Probability churner accepts offer
+    currency="USD",
 ):
     # --- 1. Preparation ---
     # Ensure inputs are standard formatting
@@ -84,7 +85,7 @@ def advanced_churn_evaluation(
 
     print(f"$$$ FINANCIAL IMPACT ANALYSIS (At Optimal Threshold: {optimal_threshold:.2f}) $$$")
     print("---------------------------------------------------------")
-    print(f"Max Potential Profit:     ${max_profit:,.2f}")
+    print(f"Max Potential Profit:     {currency} {max_profit:,.2f}")
     print(f"Return on Investment:     {optimal_roi:.1f}%")
     print(
         f"Target Volume:            {optimal_customers} customers ({optimal_customers / total_customers:.1%}% of base)"
@@ -93,8 +94,8 @@ def advanced_churn_evaluation(
 
     print("\n>>> LIFT & PERFORMANCE METRICS")
     print("---------------------------------------------------------")
-    print("Top Decile Lift:          {top_decile_lift:.2f}x (Industry Target: >3.0x)")
-    print("AUC-ROC Score:            {roc_auc_score(y, y_prob):.3f}")
+    print(f"Top Decile Lift:          {top_decile_lift:.2f}x (Industry Target: >3.0x)")
+    print(f"AUC-ROC Score:            {roc_auc_score(y, y_prob):.3f}")
 
     # Recalculate Confusion Matrix at OPTIMAL threshold (not 0.5)
     y_pred_opt = (y_prob >= optimal_threshold).astype(int)
@@ -113,12 +114,12 @@ def advanced_churn_evaluation(
         color="red",
         s=100,
         zorder=5,
-        label=f"Max Profit: ${max_profit:,.0f}",
+        label=f"Max Profit: {currency} {max_profit:,.0f}",
     )
     axes[0, 0].axvline(optimal_customers, color="red", linestyle="--", alpha=0.5)
     axes[0, 0].set_title("Profit Curve (Business Impact)", fontsize=14)
     axes[0, 0].set_xlabel("Number of Customers Contacted (Sorted by Risk)")
-    axes[0, 0].set_ylabel("Net Profit ($)")
+    axes[0, 0].set_ylabel(f"Net Profit ({currency})")
     axes[0, 0].legend()
     axes[0, 0].grid(True, alpha=0.3)
 
@@ -160,15 +161,18 @@ def advanced_churn_evaluation(
     plt.show()
 
 
-def run_sensitivity_analysis(model, X, y):
+def run_sensitivity_analysis(
+    model, X, y, scenarios=None, ltv=500, cost_offer=20, cost_contact=5, currency="USD"
+):
     print("--- SENSITIVITY ANALYSIS: Impact of Campaign Success Rate ---")
 
-    # Define three scenarios: Pessimistic, Base, Optimistic
-    scenarios = [
-        {"rate": 0.2, "label": "Pessimistic (20% Accept)"},
-        {"rate": 0.5, "label": "Base Case (50% Accept)"},
-        {"rate": 0.8, "label": "Optimistic (80% Accept)"},
-    ]
+    # Define three scenarios: Pessimistic, Base, Optimistic if scenarios are not provided
+    if scenarios is None:
+        scenarios = [
+            {"rate": 0.2, "label": "Pessimistic (20% Accept)"},
+            {"rate": 0.5, "label": "Base Case (50% Accept)"},
+            {"rate": 0.8, "label": "Optimistic (80% Accept)"},
+        ]
 
     results = []
 
@@ -177,34 +181,29 @@ def run_sensitivity_analysis(model, X, y):
         y_prob = model.predict_proba(X)[:, 1]
         df = pd.DataFrame({"y_true": y, "y_prob": y_prob}).sort_values("y_prob", ascending=False)
 
-        # Hardcoded costs for the example
-        ltv = 500
-        cost_offer = 20
-        cost_contact = 5
-
         df["cum_tp"] = df["y_true"].cumsum()
         df["total_contacted"] = df.index + 1
 
         # Calculate profit curve for this specific scenario
         revenue = df["cum_tp"] * scen["rate"] * ltv
         cost = df["total_contacted"] * (cost_offer + cost_contact)
-        profit = revenue - cost
+        profit_ = revenue - cost
 
-        max_profit = profit.max()
+        max_profit = profit_.max()
         results.append(
             {
                 "Scenario": scen["label"],
                 "Max_Profit": max_profit,
-                "Optimal_Customers": profit.idxmax() + 1,
+                "Optimal_Customers": profit_.idxmax() + 1,
             }
         )
 
-        plt.plot(df["total_contacted"], profit, label=scen["label"])
+        plt.plot(df["total_contacted"], profit_, label=scen["label"])
 
     # Plot formatting
     plt.title("Profit Sensitivity: What if the Campaign Performs Differently?")
     plt.xlabel("Number of Customers Contacted")
-    plt.ylabel("Projected Net Profit ($)")
+    plt.ylabel(f"Projected Net Profit ({currency})")
     plt.axhline(0, color="black", linestyle="--")
     plt.legend()
     plt.grid(True, alpha=0.3)
