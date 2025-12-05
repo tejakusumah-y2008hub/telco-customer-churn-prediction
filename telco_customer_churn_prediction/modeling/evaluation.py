@@ -2,12 +2,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import (
-    classification_report,
-    roc_auc_score,
-    ConfusionMatrixDisplay,
-    confusion_matrix,
-)
+from sklearn.metrics import classification_report, roc_auc_score, ConfusionMatrixDisplay
 
 
 def advanced_churn_evaluation(
@@ -83,7 +78,7 @@ def advanced_churn_evaluation(
     print(f"  EXECUTIVE SUMMARY: {model_name.upper()}")
     print("=========================================================\n")
 
-    print(f"$$$ FINANCIAL IMPACT ANALYSIS (At Optimal Threshold: {optimal_threshold:.2f}) $$$")
+    print(f" FINANCIAL IMPACT ANALYSIS (At Optimal Threshold: {optimal_threshold:.2f})")
     print("---------------------------------------------------------")
     print(f"Max Potential Profit:     {currency} {max_profit:,.2f}")
     print(f"Return on Investment:     {optimal_roi:.1f}%")
@@ -140,7 +135,14 @@ def advanced_churn_evaluation(
     axes[0, 1].grid(True, alpha=0.3)
 
     # C. Lift per Decile (Bar Chart)
-    sns.barplot(x=lift_data.index, y=lift_data["lift"], ax=axes[1, 0], palette="viridis")
+    sns.barplot(
+        x=lift_data.index,
+        y=lift_data["lift"],
+        ax=axes[1, 0],
+        palette="viridis",
+        hue=lift_data.index,
+        legend=False,
+    )
     axes[1, 0].axhline(1.0, color="red", linestyle="--", label="Baseline (Random)")
     axes[1, 0].set_title("Lift by Decile (Top 10% vs Average)", fontsize=14)
     axes[1, 0].set_ylabel("Lift Multiplier (x times better)")
@@ -215,12 +217,8 @@ def run_sensitivity_analysis(
 
 # Define a Python function that calculates profit from Truth/Prediction
 def profit_calculator(y_true, y_pred, ltv, cost, acceptance):
-    tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
-
+    tp = np.sum((y_true == 1) & (y_pred == 1))
+    fp = np.sum((y_true == 0) & (y_pred == 1))
     revenue = tp * acceptance * ltv
-    marketing_spend = (
-        tp + fp
-    ) * cost  # We spend money on everyone we predicted as churn (TP + FP)
-
-    total_profit = revenue - marketing_spend
-    return total_profit
+    marketing_spend = (tp + fp) * cost
+    return revenue - marketing_spend
