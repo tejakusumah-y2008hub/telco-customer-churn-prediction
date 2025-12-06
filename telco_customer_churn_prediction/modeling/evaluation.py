@@ -2,223 +2,204 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.metrics import classification_report, roc_auc_score, ConfusionMatrixDisplay
+import matplotlib.ticker as ticker
+from sklearn.metrics import (roc_auc_score, classification_report, 
+                             ConfusionMatrixDisplay)
 
-
-def advanced_churn_evaluation(
+def comprehensive_churn_evaluation(
     model,
     X,
     y,
     model_name="XGBoost Classifier",
+    run_id="A1",
     # --- Business Parameters ---
-    ltv=500,  # Lifetime Value ($)
-    cost_offer=20,  # Cost of incentive ($)
-    cost_contact=1,  # Cost of contact ($)
-    acceptance_rate=0.5,  # Probability churner accepts offer
+    ltv=500,                # Lifetime Value ($)
+    cost_offer=20,          # Cost of incentive ($) - Only paid if accepted
+    cost_contact=1,         # Cost of contact ($) - Paid for everyone targeted
     currency="USD",
+    
+    # --- Dynamic Acceptance Logic ---
+    acceptance_rate_base=0.5,       # Normal acceptance rate
+    acceptance_rate_high_risk=0.1,  # "Lost Cause" acceptance rate
+    high_risk_threshold=0.9         # Probability threshold for "Lost Cause"
 ):
-    # --- 1. Preparation ---
-    # Ensure inputs are standard formatting
+    # --- 1. Preparation & Probabilities ---
     y = np.array(y)
-
-    # Get Probabilities (Critical for Lift & Thresholding)
     if hasattr(model, "predict_proba"):
         y_prob = model.predict_proba(X)[:, 1]
     else:
-        raise ValueError("Model must support predict_proba for business calculations.")
+        raise ValueError("Model must support predict_proba")
 
-    # Create a DataFrame for analysis
+    # Create Analysis DataFrame
     df_res = pd.DataFrame({"y_true": y, "y_prob": y_prob})
     df_res = df_res.sort_values("y_prob", ascending=False).reset_index(drop=True)
 
-    # --- 2. The Profit Curve & Optimal Threshold ---
-    # We calculate the business outcome at EVERY possible threshold (row by row)
+    # --- 2. Microscopic Financial Calculation (Code 2 Logic) ---
+    # Define Acceptance Probability per row
+    df_res['prob_accept'] = np.where(
+        df_res['y_prob'] > high_risk_threshold, 
+        acceptance_rate_high_risk, 
+        acceptance_rate_base
+    )
+    
+    # Expected Revenue & Cost (Per Row)
+    df_res['expected_revenue'] = df_res['y_true'] * df_res['prob_accept'] * ltv
+    df_res['expected_cost'] = cost_contact + (df_res['prob_accept'] * cost_offer)
+    
+    # Net Profit per Row & Cumulative
+    df_res['row_profit'] = df_res['expected_revenue'] - df_res['expected_cost']
+    df_res['cum_profit'] = df_res['row_profit'].cumsum()
+    df_res['cum_revenue'] = df_res['expected_revenue'].cumsum()
+    df_res['cum_cost'] = df_res['expected_cost'].cumsum()
+    
+    # Cumulative stats for Gains Curve
+    df_res['cum_tp'] = df_res["y_true"].cumsum() 
+    df_res['cum_total'] = df_res.index + 1
 
-    # Cumulative stats
-    df_res["cum_tp"] = df_res["y_true"].cumsum()
-    df_res["cum_fp"] = (1 - df_res["y_true"]).cumsum()
-    df_res["cum_total"] = df_res.index + 1
-
-    # Business Formula
-    # Profit = (Revenue from Saved Churners) - (Cost of Campaign)
-    # Revenue = (True Positives * Acceptance_Rate * LTV)
-    # Cost = (Contacted_Count * (Cost_Contact + Cost_Offer))
-
-    df_res["campaign_cost"] = df_res["cum_total"] * (cost_contact + cost_offer)
-    df_res["revenue_saved"] = df_res["cum_tp"] * acceptance_rate * ltv
-    df_res["net_profit"] = df_res["revenue_saved"] - df_res["campaign_cost"]
-
-    # Find the Sweet Spot (Max Profit)
-    max_profit_idx = df_res["net_profit"].idxmax()
-    max_profit = df_res.loc[max_profit_idx, "net_profit"]
-    optimal_threshold = df_res.loc[max_profit_idx, "y_prob"]
+    # --- 3. Optimization & Detailed Metrics ---
+    max_profit_idx = df_res['cum_profit'].idxmax()
+    max_profit = df_res.loc[max_profit_idx, 'cum_profit']
+    optimal_threshold = df_res.loc[max_profit_idx, 'y_prob']
     optimal_customers = max_profit_idx + 1
     total_customers = len(df_res)
+    
+    # Extract the "Optimal Row" for snapshot metrics
+    row = df_res.loc[max_profit_idx]
+    
+    # --- RE-INSERTED: Detailed Waste & Efficiency Logic ---
+    total_targeted = row["cum_total"]
+    tp_count = row["cum_tp"]
+    fp_count = total_targeted - tp_count
+    
+    # Slice the dataframe to analyze ONLY the targeted group
+    target_group = df_res.iloc[:optimal_customers]
+    
+    # Averages for the specific targeted segment
+    avg_risk = target_group['y_prob'].mean()
+    avg_acceptance = target_group['prob_accept'].mean()
+    
+    # Calculate specific 'Cost of False Positives' (Waste)
+    # Logic: Cost of contact (for all FPs) + Cost of Offer (for FPs who accepted)
+    # Note: FPs are where y_true == 0
+    fp_mask = target_group['y_true'] == 0
+    waste_contact = fp_mask.sum() * cost_contact
+    waste_incentive = (target_group.loc[fp_mask, 'prob_accept'] * cost_offer).sum()
+    cost_of_fp = waste_contact + waste_incentive
+    
+    # ROI
+    optimal_roi = (max_profit / row['cum_cost']) * 100
 
-    # ROI at optimal point
-    optimal_roi = (max_profit / df_res.loc[max_profit_idx, "campaign_cost"]) * 100
-
-    # --- 3. Decile Analysis (The "Lift" Report) ---
+    # --- 4. Technical Performance Metrics (Code 1 Features) ---
+    # Lift Analysis
     df_res["decile"] = pd.qcut(df_res.index, 10, labels=False) + 1
     lift_data = (
         df_res.groupby("decile")
-        .agg(total_customers=("y_true", "count"), actual_churners=("y_true", "sum"))
+        .agg(total=("y_true", "count"), actual_churners=("y_true", "sum"))
         .sort_index()
     )
-
-    # Calculate Lift
     global_churn_rate = y.mean()
-    lift_data["churn_rate"] = lift_data["actual_churners"] / lift_data["total_customers"]
+    lift_data["churn_rate"] = lift_data["actual_churners"] / lift_data["total"]
     lift_data["lift"] = lift_data["churn_rate"] / global_churn_rate
+    top_decile_lift = lift_data.loc[1, "lift"]
 
-    top_decile_lift = lift_data.loc[1, "lift"]  # Decile 1 (Top 10%)  # noqa: F841
+    # Predictions for Classification Reports
+    y_pred_default = (y_prob >= 0.5).astype(int)            
+    y_pred_optimal = (y_prob >= optimal_threshold).astype(int) 
 
-    # --- 4. Printing the Executive Report ---
+    # --- 5. Executive Report (Merged & Complete) ---
+    print(f"Run ID: {run_id}\n")
     print("=========================================================")
-    print(f"  EXECUTIVE SUMMARY: {model_name.upper()}")
+    print(f"  EVALUATION REPORT: {model_name.upper()}")
     print("=========================================================\n")
-
-    print(f" FINANCIAL IMPACT ANALYSIS (At Optimal Threshold: {optimal_threshold:.2f})")
+    
+    # --- SECTION A: The Strategic & Financial Deep Dive (Restored) ---
+    print(f" STRATEGIC DECISION (Optimal Threshold: {optimal_threshold:.4f})")
     print("---------------------------------------------------------")
-    print(f"Max Potential Profit:     {currency} {max_profit:,.2f}")
-    print(f"Return on Investment:     {optimal_roi:.1f}%")
-    print(
-        f"Target Volume:            {optimal_customers} customers ({optimal_customers / total_customers:.1%}% of base)"
-    )
+    print(f" Target Volume:           {int(total_targeted):,} customers")
+    print(f" Coverage:                {total_targeted / total_customers:.1%} of total customer base")
+    print(f" Avg. Risk of Target:     {avg_risk:.1%}")
+    print(f" Est. Acceptance Rate:    {avg_acceptance:.1%} (weighted average)")
+    print("---------------------------------------------------------\n")
+
+    print(f" FINANCIAL IMPACT ({currency})")
+    print("---------------------------------------------------------")
+    print(f" Total Revenue Saved:     {currency} {row['cum_revenue']:,.0f}")
+    print(f" Total Campaign Spend:    {currency} {row['cum_cost']:,.0f}")
+    print(f" NET PROFIT:              {currency} {max_profit:,.0f}")
+    print(f" ROI:                     {optimal_roi:.1f}%")
+    print("---------------------------------------------------------\n")
+    
+    print(" EFFICIENCY & WASTE ANALYSIS")
+    print("---------------------------------------------------------")
+    print(f" Correctly Targeted:      {int(tp_count):,} (Churners)")
+    print(f" Incorrectly Targeted:    {int(fp_count):,} (Loyalists)")
+    print(f" Cost of False Positives: {currency} {cost_of_fp:,.0f} (Cannibalization/Waste)")
+    print(f" Spend Efficiency:        For every {currency} 1 spent, we generate {currency} {row['cum_revenue']/row['cum_cost']:.2f}")
+    print("---------------------------------------------------------\n")
+
+    # --- SECTION B: Model Performance (Technical Context) ---
+    print(" MODEL PERFORMANCE METRICS")
+    print("---------------------------------------------------------")
+    print(f" AUC-ROC Score:           {roc_auc_score(y, y_prob):.3f}")
+    print(f" Top Decile Lift:         {top_decile_lift:.2f}x")
     print("---------------------------------------------------------")
 
-    print("\n>>> LIFT & PERFORMANCE METRICS")
+    print("\n CLASSIFICATION COMPARISON")
     print("---------------------------------------------------------")
-    print(f"Top Decile Lift:          {top_decile_lift:.2f}x (Industry Target: >3.0x)")
-    print(f"AUC-ROC Score:            {roc_auc_score(y, y_prob):.3f}")
+    print(">>> 1. Standard Threshold (0.5) - Raw Model Power:")
+    print(classification_report(y, y_pred_default, target_names=["Stay", "Churn"]))
+    print("\n>>> 2. Optimal Threshold (Profit Max) - Business Reality:")
+    print(classification_report(y, y_pred_optimal, target_names=["Stay", "Churn"]))
 
-    # Recalculate Confusion Matrix at OPTIMAL threshold (not 0.5)
-    y_pred_opt = (y_prob >= optimal_threshold).astype(int)
-    print("\nClassification Report (Optimized for Profit):")
-    print(classification_report(y, y_pred_opt, target_names=["Stay", "Churn"]))
+    # --- 6. Visualizations (The Complete Dashboard) ---
+    fig = plt.figure(figsize=(20, 12))
+    gs = fig.add_gridspec(2, 3)
 
-    # --- 5. Visualizations ---
-    fig, axes = plt.subplots(2, 2, figsize=(18, 12))
-    plt.subplots_adjust(hspace=0.3)
+    # Plot 1: Profit Curve (Dynamic)
+    ax1 = fig.add_subplot(gs[0, 0])
+    ax1.plot(df_res["cum_total"], df_res["cum_profit"], color="green", lw=2)
+    ax1.scatter(optimal_customers, max_profit, color="red", s=100, zorder=5)
+    ax1.axvline(optimal_customers, color="red", ls="--", alpha=0.5)
+    ax1.set_title("Profit Curve (Dynamic Expected Value)", fontsize=12, fontweight='bold')
+    ax1.set_xlabel("Customers Contacted")
+    ax1.set_ylabel(f"Profit ({currency})")
+    ax1.yaxis.set_major_formatter(ticker.StrMethodFormatter('{x:,.0f}'))
+    ax1.grid(True, alpha=0.3)
 
-    # A. Profit Curve
-    axes[0, 0].plot(df_res["cum_total"], df_res["net_profit"], color="green", linewidth=2)
-    axes[0, 0].scatter(
-        optimal_customers,
-        max_profit,
-        color="red",
-        s=100,
-        zorder=5,
-        label=f"Max Profit: {currency} {max_profit:,.0f}",
-    )
-    axes[0, 0].axvline(optimal_customers, color="red", linestyle="--", alpha=0.5)
-    axes[0, 0].set_title("Profit Curve (Business Impact)", fontsize=14)
-    axes[0, 0].set_xlabel("Number of Customers Contacted (Sorted by Risk)")
-    axes[0, 0].set_ylabel(f"Net Profit ({currency})")
-    axes[0, 0].legend()
-    axes[0, 0].grid(True, alpha=0.3)
+    # Plot 2: Cumulative Gains (Standard)
+    ax2 = fig.add_subplot(gs[0, 1])
+    ax2.plot(df_res.index/len(df_res), df_res["cum_tp"]/df_res["y_true"].sum(), color="blue", lw=2)
+    ax2.plot([0, 1], [0, 1], "k--", label="Random")
+    ax2.set_title("Cumulative Gains (Recall)", fontsize=12, fontweight='bold')
+    ax2.set_xlabel("% of Base Contacted")
+    ax2.set_ylabel("% of Churners Captured")
+    ax2.grid(True, alpha=0.3)
 
-    # B. Cumulative Gains Curve (Industry Standard)
-    # % of total churners captured by contacting top % of base
-    axes[0, 1].plot(
-        df_res.index / total_customers,
-        df_res["cum_tp"] / df_res["y_true"].sum(),
-        color="blue",
-        linewidth=2,
-        label="Model",
-    )
-    axes[0, 1].plot([0, 1], [0, 1], "k--", label="Random Guessing")
-    axes[0, 1].set_title("Cumulative Gains Curve (Recall by Volume)", fontsize=14)
-    axes[0, 1].set_xlabel("% of Customer Base Contacted")
-    axes[0, 1].set_ylabel("% of All Churners Captured")
-    axes[0, 1].legend()
-    axes[0, 1].grid(True, alpha=0.3)
+    # Plot 3: Lift Chart
+    ax3 = fig.add_subplot(gs[0, 2])
+    sns.barplot(x=lift_data.index, y=lift_data["lift"], ax=ax3, palette="viridis", hue=lift_data.index, legend=False)
+    ax3.axhline(1.0, color="red", ls="--")
+    ax3.set_title("Lift by Decile", fontsize=12, fontweight='bold')
+    ax3.set_ylabel("Lift Multiplier")
 
-    # C. Lift per Decile (Bar Chart)
-    sns.barplot(
-        x=lift_data.index,
-        y=lift_data["lift"],
-        ax=axes[1, 0],
-        palette="viridis",
-        hue=lift_data.index,
-        legend=False,
-    )
-    axes[1, 0].axhline(1.0, color="red", linestyle="--", label="Baseline (Random)")
-    axes[1, 0].set_title("Lift by Decile (Top 10% vs Average)", fontsize=14)
-    axes[1, 0].set_ylabel("Lift Multiplier (x times better)")
-    axes[1, 0].set_xlabel("Decile (1=Highest Risk)")
-    axes[1, 0].legend()
+    # Plot 4: Confusion Matrix (Standard 0.5)
+    ax4 = fig.add_subplot(gs[1, 0])
+    ConfusionMatrixDisplay.from_predictions(y, y_pred_default, ax=ax4, cmap="Blues", colorbar=False)
+    ax4.set_title("Confusion Matrix (Thresh=0.5)", fontsize=12, fontweight='bold')
 
-    # D. Confusion Matrix (At Optimal Threshold)
-    ConfusionMatrixDisplay.from_predictions(
-        y,
-        y_pred_opt,
-        ax=axes[1, 1],
-        cmap="Blues",
-        normalize=None,
-        display_labels=["Stay", "Churn"],
-    )
-    axes[1, 1].set_title(f"Confusion Matrix\n(Threshold = {optimal_threshold:.2f})", fontsize=14)
+    # Plot 5: Confusion Matrix (Optimal)
+    ax5 = fig.add_subplot(gs[1, 1])
+    ConfusionMatrixDisplay.from_predictions(y, y_pred_optimal, ax=ax5, cmap="Greens", colorbar=False)
+    ax5.set_title(f"Confusion Matrix (Thresh={optimal_threshold:.2f})", fontsize=12, fontweight='bold')
 
+    # Plot 6: Acceptance Probability Dist (The "Microscopic" Check)
+    ax6 = fig.add_subplot(gs[1, 2])
+    # Show distribution of acceptance ONLY for the targeted group
+    sns.histplot(target_group['prob_accept'], bins=5, ax=ax6, color='orange')
+    ax6.set_title("Acceptance Odds of Targeted Users", fontsize=12, fontweight='bold')
+    ax6.set_xlabel("Probability of Accepting Offer")
+
+    plt.tight_layout()
     plt.show()
 
-
-def run_sensitivity_analysis(
-    model, X, y, scenarios=None, ltv=500, cost_offer=20, cost_contact=5, currency="USD"
-):
-    print("--- SENSITIVITY ANALYSIS: Impact of Campaign Success Rate ---")
-
-    # Define three scenarios: Pessimistic, Base, Optimistic if scenarios are not provided
-    if scenarios is None:
-        scenarios = [
-            {"rate": 0.2, "label": "Pessimistic (20% Accept)"},
-            {"rate": 0.5, "label": "Base Case (50% Accept)"},
-            {"rate": 0.8, "label": "Optimistic (80% Accept)"},
-        ]
-
-    results = []
-
-    for scen in scenarios:
-        # We reuse logic from the main function, but simplified for comparison
-        y_prob = model.predict_proba(X)[:, 1]
-        df = pd.DataFrame({"y_true": y, "y_prob": y_prob}).sort_values("y_prob", ascending=False)
-
-        df["cum_tp"] = df["y_true"].cumsum()
-        df["total_contacted"] = df.index + 1
-
-        # Calculate profit curve for this specific scenario
-        revenue = df["cum_tp"] * scen["rate"] * ltv
-        cost = df["total_contacted"] * (cost_offer + cost_contact)
-        profit_ = revenue - cost
-
-        max_profit = profit_.max()
-        results.append(
-            {
-                "Scenario": scen["label"],
-                "Max_Profit": max_profit,
-                "Optimal_Customers": profit_.idxmax() + 1,
-            }
-        )
-
-        plt.plot(df["total_contacted"], profit_, label=scen["label"])
-
-    # Plot formatting
-    plt.title("Profit Sensitivity: What if the Campaign Performs Differently?")
-    plt.xlabel("Number of Customers Contacted")
-    plt.ylabel(f"Projected Net Profit ({currency})")
-    plt.axhline(0, color="black", linestyle="--")
-    plt.legend()
-    plt.grid(True, alpha=0.3)
-    plt.show()
-
-    # Output the comparison table
-    print(pd.DataFrame(results))
-
-
-# Define a Python function that calculates profit from Truth/Prediction
-def profit_calculator(y_true, y_pred, ltv, cost, acceptance):
-    tp = np.sum((y_true == 1) & (y_pred == 1))
-    fp = np.sum((y_true == 0) & (y_pred == 1))
-    revenue = tp * acceptance * ltv
-    marketing_spend = (tp + fp) * cost
-    return revenue - marketing_spend
+    return df_res
