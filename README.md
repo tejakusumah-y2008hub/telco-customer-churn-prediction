@@ -75,7 +75,7 @@ Instead of relying on raw volume (which varies by user), I engineered **39 unit-
 **Key Insights:**
 * **Data Profiling:** High-integrity dataset with no missing values; class imbalance (23.1% churn) addressed via weighting/SMOTE.
 * **Key Predictor:** The strongest signal is **"Gradual Fade"**—users whose data consumption drops significantly from Week 1 to Week 4.
-* **Feature Engineering:** Reduced dimensionality by removing 19 collinear features, retaining 23 robust predictors via **IV & WoE analysis** for modeling.
+* **Feature Selection:** Reduced dimensionality by removing 19 collinear features, retaining 23 robust predictors via **IV & WoE analysis** for modeling.
 * **User Segmentation:** Identified a critical **"Early Burnout"** segment (Cluster 1) via **UMAP** and **k-Means** that spends heavily in Week 1 before usage crashes by ~53%.
 
 ---
