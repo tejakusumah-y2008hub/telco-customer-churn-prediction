@@ -33,7 +33,7 @@ except ModuleNotFoundError:
     pass
 
 
-def configure_mlflow():
+def configure_mlflow(name_experiment="Telco_Customer_Churn_Prediction_LKR"):
     """
     Configures MLflow to save runs to the project root 'mlruns' folder.
     """
@@ -46,7 +46,7 @@ def configure_mlflow():
 
     # 3. Set up MLflow
     mlflow.set_tracking_uri(tracking_uri)
-    mlflow.set_experiment("Telco_Customer_Churn_Prediction_LKR")
+    mlflow.set_experiment(name_experiment)
 
     # 4. Use the existing logger instead of print()
     logger.info(f"MLflow configured. Tracking URI: {tracking_uri}")
