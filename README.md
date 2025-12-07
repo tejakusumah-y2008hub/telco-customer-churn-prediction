@@ -32,7 +32,7 @@ By engineering **robust behavioral features** (Trend Deltas, Gini Coefficients, 
 ---
 
 ## 💼 Business Problem & Assumptions
-**The Challenge:** A Sri Lankan telco company suffers from customers churning their service. Identifying customers *before* they leave is critical, but traditional metrics (Accuracy) fail to account for the financial asymmetry between a False Negative (Lost LTV) and a False Positive (Cost of Retention Offer).
+**The Challenge:** A Sri Lankan telco company suffers from customers churning their service. Identifying customers *before* they leave is critical, but traditional metrics (Accuracy) fail to account for the financial asymmetry between a False Negative (Lost LTV) and a False Positive (Cost of Retention Offer). Using a customer's behavior from their first 4 weeks (Days 1-28), can we predict if they will become **at-risk** of churning?
 
 **Market Context (Sri Lanka / Dialog Axiata Proxies):**
 * **Average Revenue Per User (ARPU):** LKR 750.00
@@ -44,7 +44,9 @@ By engineering **robust behavioral features** (Trend Deltas, Gini Coefficients, 
 
 ## 💾 Data Overview
 **Source:** [Link to Datasets](https://www.kaggle.com/datasets/lasaljaywardena/real-world-churn)
+
 **Snapshot Period:** January 1, 2023, to March 31, 2023
+
 **Dataset Overview:**
 The dataset consists of **14 CSV files** tracking daily activity for **65,005 customers** over 3 months.
 * **Core Labels:** `train_cxid.csv` and `test_cxid.csv` containing Customer IDs and Churn status.
@@ -98,7 +100,8 @@ A default decision threshold (0.5) yielded good precision but missed too many ch
 * **Projected Net Profit:** **LKR 5,040,042** (on the test set).
 * **Recall:** **99%** (We catch almost every potential churner).
 
-**Sensitivity Analysis:**
+### Sensitivity Analysis:
+
 I simulated three offer strategies. The **Gold Tier (30% off)** was selected as the optimal balance between acceptance rate and margin preservation.
 * *Platinum (50% off):* Higher revenue saved, but lower ROI (630%).
 * *Bronze (20% off):* Highest ROI (1335%), but lower total profit due to lower acceptance.
