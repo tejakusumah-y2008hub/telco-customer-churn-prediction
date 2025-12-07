@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import matplotlib.ticker as ticker
+from sklearn.calibration import calibration_curve
 from sklearn.metrics import (roc_auc_score, classification_report, 
                              ConfusionMatrixDisplay)
 
@@ -34,7 +35,7 @@ def comprehensive_churn_evaluation(
     df_res = pd.DataFrame({"y_true": y, "y_prob": y_prob})
     df_res = df_res.sort_values("y_prob", ascending=False).reset_index(drop=True)
 
-    # --- 2. Microscopic Financial Calculation (Code 2 Logic) ---
+    # --- 2. Microscopic Financial Calculation ---
     # Define Acceptance Probability per row
     df_res['prob_accept'] = np.where(
         df_res['y_prob'] > high_risk_threshold, 
@@ -89,7 +90,7 @@ def comprehensive_churn_evaluation(
     # ROI
     optimal_roi = (max_profit / row['cum_cost']) * 100
 
-    # --- 4. Technical Performance Metrics (Code 1 Features) ---
+    # --- 4. Technical Performance Metrics ---
     # Lift Analysis
     df_res["decile"] = pd.qcut(df_res.index, 10, labels=False) + 1
     lift_data = (
@@ -203,3 +204,257 @@ def comprehensive_churn_evaluation(
     plt.show()
 
     return df_res
+
+
+def run_sensitivity_analysis(
+    model, 
+    X, 
+    y, 
+    scenarios, 
+    ltv, 
+    cost_contact, 
+    currency="USD",
+    high_risk_threshold=0.9, 
+    high_risk_decay=0.2  # High risk customers are only 20% as likely to accept as base
+):
+    """
+    Fast, memory-efficient scenario comparison for Churn strategies.
+    
+    Args:
+        scenarios: List of dicts, e.g. [{'rate': 0.18, 'cost': 150, 'label': 'Bronze'}, ...]
+        high_risk_decay: Multiplier for high-risk customers. 
+                         If scenario rate is 20% (0.20), high risk folks accept at 0.20 * 0.2 = 4%.
+    """
+    
+    # --- 1. Pre-Computation ---
+    print("Pre-computing model probabilities...")
+    y = np.array(y)
+    
+    if hasattr(model, "predict_proba"):
+        y_prob = model.predict_proba(X)[:, 1]
+    else:
+        raise ValueError("Model must support predict_proba")
+
+    # Create a lightweight structured array or DataFrame for sorting
+    data = pd.DataFrame({"y_true": y, "y_prob": y_prob})
+    data = data.sort_values("y_prob", ascending=False).reset_index(drop=True)
+    
+    # Convert to numpy arrays for raw speed in the loop
+    y_true_sorted = data["y_true"].values
+    y_prob_sorted = data["y_prob"].values
+    n_customers = len(y_true_sorted)
+    
+    # Pre-calculate the High Risk Mask (Boolean array)
+    # True if customer is "Lost Cause" (>90% risk)
+    is_high_risk = y_prob_sorted > high_risk_threshold
+    
+    results = []
+
+    print(f"Running analysis on {len(scenarios)} scenarios...")
+    
+    for sc in scenarios:
+        base_rate = sc['rate']
+        offer_cost = sc['cost']
+        label = sc['label']
+        
+        # A. Dynamic Acceptance Vector
+        # If high risk, rate = base_rate * decay. Else, rate = base_rate.
+        # This is the "Microscopic" view applied efficiently
+        prob_accept = np.where(
+            is_high_risk, 
+            base_rate * high_risk_decay, 
+            base_rate
+        )
+        
+        # B. Vectorized Financial Math
+        # Exp Revenue = y_true * prob_accept * LTV
+        exp_revenue = y_true_sorted * prob_accept * ltv
+        
+        # Exp Cost = Contact + (prob_accept * Offer Cost)
+        exp_cost = cost_contact + (prob_accept * offer_cost)
+        
+        # Profit per customer
+        row_profit = exp_revenue - exp_cost
+        
+        # Cumulative Sum to find the "Peak" of the mountain
+        cum_profit = np.cumsum(row_profit)
+        
+        # C. Capture Metrics at Max Profit
+        max_profit_idx = np.argmax(cum_profit)
+        max_profit = cum_profit[max_profit_idx]
+        optimal_customers = max_profit_idx + 1
+        
+        # Calculate ROI at that specific optimal point
+        total_spend_at_peak = np.sum(exp_cost[:optimal_customers])
+        roi = (max_profit / total_spend_at_peak) * 100
+        
+        results.append({
+            "Scenario": label,
+            "Base Acceptance": f"{base_rate:.1%}",
+            "Offer Cost": f"{offer_cost}",
+            "Max Profit": max_profit,
+            "Optimal Volume": optimal_customers,
+            "ROI": roi,
+            "cum_profit_curve": cum_profit # Store curve for plotting
+        })
+
+    # --- 3. Outputs ---
+    df_results = pd.DataFrame(results).drop(columns=["cum_profit_curve"])
+    
+    # Print Table
+    print("\n=========================================================")
+    print(f" SENSITIVITY ANALYSIS: STRATEGY COMPARISON ({currency})")
+    print("=========================================================")
+    print(df_results.to_string(index=False))
+    print("=========================================================\n")
+    
+    # --- 4. Visualization ---
+    plt.figure(figsize=(12, 7))
+    
+    colors = sns.color_palette("viridis", len(scenarios))
+    
+    # X-axis range (Customers Contacted)
+    x_axis = np.arange(1, n_customers + 1)
+    
+    for i, res in enumerate(results):
+        # Plot the profit curve stored in the results
+        plt.plot(x_axis, res['cum_profit_curve'], label=f"{res['Scenario']} (ROI: {res['ROI']:.1f}%)", 
+                 color=colors[i], linewidth=2.5)
+        
+        # Mark the peak
+        peak_x = res['Optimal Volume']
+        peak_y = res['Max Profit']
+        plt.scatter(peak_x, peak_y, color=colors[i], s=100, zorder=5, edgecolors='white')
+
+    plt.title(f"Profit Impact of Different Offer Strategies ({currency})", fontsize=14, fontweight='bold')
+    plt.xlabel("Number of Customers Contacted (Sorted by Risk)")
+    plt.ylabel(f"Net Profit ({currency})")
+    plt.axhline(0, color='black', linestyle='--', alpha=0.3)
+    plt.legend()
+    plt.grid(True, alpha=0.2)
+    plt.tight_layout()
+    plt.show()
+    
+    
+def analyze_prediction_errors(model, X, y, threshold=0.5, top_features=5):
+    """
+    Deep dive into False Positives and False Negatives.
+    
+    Args:
+        model: Trained model.
+        X: Feature set (Test set).
+        y: True labels (Test set).
+        threshold: The decision threshold (the optimal one found in the !).
+        top_features: Number of features to analyze in the deviation report.
+    """
+    print(f"--- ERROR ANALYSIS REPORT (Threshold: {threshold}) ---")
+    
+    # 1. Setup Data
+    X_analysis = X.copy()
+    y = np.array(y)
+    
+    if hasattr(model, "predict_proba"):
+        y_prob = model.predict_proba(X)[:, 1]
+    else:
+        raise ValueError("Model must support predict_proba")
+        
+    y_pred = (y_prob >= threshold).astype(int)
+    
+    # 2. Categorize Predictions
+    # TP: Predicted 1, Actual 1
+    # FP: Predicted 1, Actual 0
+    # FN: Predicted 0, Actual 1
+    # TN: Predicted 0, Actual 0
+    
+    conditions = [
+        (y == 1) & (y_pred == 1), # TP
+        (y == 0) & (y_pred == 1), # FP
+        (y == 1) & (y_pred == 0), # FN
+        (y == 0) & (y_pred == 0)  # TN
+    ]
+    choices = ['TP (Correct Catch)', 'FP (False Alarm)', 'FN (Missed Churn)', 'TN (Safe)']
+    
+    X_analysis['category'] = np.select(conditions, choices, default='Unknown')
+    X_analysis['y_true'] = y
+    X_analysis['y_prob'] = y_prob
+    
+    # 3. Probability Distribution of Errors
+    plt.figure(figsize=(14, 6))
+    
+    # Plot A: The "Risk Landscape"
+    plt.subplot(1, 2, 1)
+    sns.histplot(data=X_analysis, x='y_prob', hue='category', element="step", stat="density", common_norm=False)
+    plt.axvline(threshold, color='red', linestyle='--', label=f'Cutoff ({threshold})')
+    plt.title("Where do the Errors Live? (Probability Dist)")
+    plt.xlabel("Predicted Probability")
+    
+    # Plot B: Calibration Check (Reliability Curve)
+    plt.subplot(1, 2, 2)
+    prob_true, prob_pred = calibration_curve(y, y_prob, n_bins=10)
+    plt.plot(prob_pred, prob_true, marker='o', label='Your Model')
+    plt.plot([0, 1], [0, 1], linestyle='--', color='gray', label='Perfectly Calibrated')
+    plt.title("Calibration Plot (Reliability)")
+    plt.xlabel("Mean Predicted Probability")
+    plt.ylabel("Fraction of Positives")
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # 4. Feature Profiling (Why did we mess up?)
+    # We compare the Mean value of features for Errors vs Correct predictions
+    
+    # Get numeric features only for aggregation
+    numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+    
+    # Group by Category
+    grouped = X_analysis.groupby('category')[numeric_cols].mean()
+    
+    print("\n>>> PROFILING THE MISTAKES")
+    print("Compare the average feature values of Errors vs. Correct predictions.\n")
+    
+    # A. Analyzing False Positives (Who did we annoy?)
+    # Compare FP (Wrongly targeted) vs TP (Correctly targeted)
+    # This tells us: "What makes a False Positive look like a True Positive?"
+    if 'FP (False Alarm)' in grouped.index and 'TP (Correct Catch)' in grouped.index:
+        print(f"--- FALSE POSITIVE ANALYSIS (Loyalists we scared) ---")
+        fp_profile = grouped.loc['FP (False Alarm)']
+        tp_profile = grouped.loc['TP (Correct Catch)']
+        tn_profile = grouped.loc['TN (Safe)']
+        
+        # Calculate % difference from the "Safe" customers (TN)
+        # If FPs have much higher values than TNs, that's why the model got confused.
+        diff = ((fp_profile - tn_profile) / tn_profile).replace([np.inf, -np.inf], 0)
+        top_confusers = diff.abs().sort_values(ascending=False).head(top_features)
+        
+        print("Why did the model think they would churn?")
+        for feature in top_confusers.index:
+            val_fp = fp_profile[feature]
+            val_tn = tn_profile[feature]
+            pct_diff = diff[feature] * 100
+            print(f"- {feature}: FP Avg ({val_fp:.2f}) is {pct_diff:+.1f}% vs Loyal Avg ({val_tn:.2f})")
+            
+    # B. Analyzing False Negatives (Who escaped?)
+    # Compare FN (Missed) vs TN (Correctly ignored)
+    # This tells us: "What makes a False Negative look Safe?"
+    print(f"\n--- FALSE NEGATIVE ANALYSIS (Churners we missed) ---")
+    if 'FN (Missed Churn)' in grouped.index and 'TN (Safe)' in grouped.index:
+        fn_profile = grouped.loc['FN (Missed Churn)']
+        tp_profile = grouped.loc['TP (Correct Catch)']
+        
+        # Compare Missed Churners (FN) to Caught Churners (TP)
+        # Why did these specific churners look different?
+        diff_missed = ((fn_profile - tp_profile) / tp_profile).replace([np.inf, -np.inf], 0)
+        top_hiders = diff_missed.abs().sort_values(ascending=False).head(top_features)
+        
+        print("Why did the model think they were safe?")
+        for feature in top_hiders.index:
+            val_fn = fn_profile[feature]
+            val_tp = tp_profile[feature]
+            pct_diff = diff_missed[feature] * 100
+            print(f"- {feature}: FN Avg ({val_fn:.2f}) is {pct_diff:+.1f}% vs Caught Churners ({val_tp:.2f})")
+
+    return X_analysis # Returns the dataframe with categories for further manual inspection
+
+    
+    
