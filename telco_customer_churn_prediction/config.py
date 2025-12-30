@@ -1,8 +1,8 @@
 from pathlib import Path
-import mlflow
 
 from dotenv import load_dotenv
 from loguru import logger
+import mlflow
 
 # Load environment variables from .env file if it exists
 load_dotenv()
