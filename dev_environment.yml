@@ -1,0 +1,41 @@
+name: telco-churn-dev
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+# --- CONDA-FORGE MANAGED ---
+  - python=3.10.19
+  - pip=25.3
+  # --- NOTEBOOK ECOSYSTEM ---
+  - jupyterlab==4.4.10
+  - ipykernel==7.1.0
+  - ipywidgets==8.1.8
+  # --- CORE DATA PROCESSING ---
+  - numpy=2.2.5
+  - pandas=2.3.3
+  - scipy=1.15.3
+  # --- VISUALIZATION ---
+  - matplotlib=3.10.0
+  - seaborn=0.13.2
+  # --- EDA & PROFILING ---
+  - ydata-profiling==4.18.0
+  - sweetviz==2.3.1     
+  - umap-learn==0.5.9.post2
+    # --- EXPERIMENT TRACKING & UTILS ---
+  - mlflow==3.6.0
+  - loguru==0.7.3
+  - python-dotenv==1.2.1
+  # --- MACHINE LEARNING & MODELING ---
+  - scikit-learn=1.7.2
+  - imbalanced-learn==0.14.0
+  - xgboost==3.1.2
+  - optuna==4.6.0
+  - joblib==1.5.2
+  # --- QUALITY TOOLS ---
+  - pytest==9.0.1
+  - ruff==0.14.5
+
+# --- PIP MANAGED ---
+  - pip:
+      # --- THE LOCAL EDITABLE INSTALL ---
+      - -e .
