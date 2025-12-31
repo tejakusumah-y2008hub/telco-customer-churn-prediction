@@ -82,6 +82,7 @@ instance/
 
 # MkDocs documentation
 docs/site/
+docs/
 
 # PyBuilder
 .pybuilder/
