@@ -1,8 +1,8 @@
 from pathlib import Path
-import mlflow
 
 from dotenv import load_dotenv
 from loguru import logger
+import mlflow
 
 # Load environment variables from .env file if it exists
 load_dotenv()
@@ -22,8 +22,13 @@ MODELS_DIR = PROJ_ROOT / "models"
 REPORTS_DIR = PROJ_ROOT / "reports"
 FIGURES_DIR = REPORTS_DIR / "figures"
 
-# If tqdm is installed, configure loguru with tqdm.write
-# https://github.com/Delgan/loguru/issues/135
+# Make sure directories exist
+INTERIM_DATA_DIR.mkdir(parents=True, exist_ok=True)
+PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
+FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+
+# Logger configuration
 try:
     from tqdm import tqdm
 
