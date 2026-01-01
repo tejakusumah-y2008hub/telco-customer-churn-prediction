@@ -9,8 +9,11 @@
 ![MLflow](https://img.shields.io/badge/Tracking-MLflow-blueviolet)
 ![Optuna](https://img.shields.io/badge/Tuning-Optuna-green)
 ![Status](https://img.shields.io/badge/Status-Completed-brightgreen)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://[YOUR-APP-URL].streamlit.app)
 
 > **Business Impact:** Achieved a projected **981% ROI** and **LKR 5.04M Net Profit** by optimizing the classification threshold for profitability rather than accuracy.
+
+> **🔴 Live Demo:** [Click here to use the ROI Dashboard](https://telco-customer-churn-prediction-yusuftejakusumah.streamlit.app/)
 
 ## 📋 Table of Contents
 - [Project Summary](#-project-summary)
@@ -121,6 +124,5 @@ I simulated three offer strategies. The **Gold Tier (30% off)** was selected as 
 ├── models/
 │   └── telco_churn_xgboost_v0.pkl       # Final serialized model
 ├── reports/
-│   ├── mlruns/              # MLflow experiment tracking logs
 │   └── figures/           # Generated graphics and figures to be used in reporting
 └── README.md
