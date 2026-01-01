@@ -4,8 +4,8 @@
     <img src="https://img.shields.io/badge/CCDS-Project%20template-328F97?logo=cookiecutter" />
 </a>
 
-![Python](https://img.shields.io/badge/Python-3.9%2B-blue)
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://[YOUR-APP-URL].streamlit.app)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://telco-customer-churn-prediction-yusuftejakusumah.streamlit.app/)
 ![XGBoost](https://img.shields.io/badge/Model-XGBoost-orange)
 ![MLflow](https://img.shields.io/badge/Tracking-MLflow-blueviolet)
 ![Optuna](https://img.shields.io/badge/Tuning-Optuna-green)
