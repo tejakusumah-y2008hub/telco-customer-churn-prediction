@@ -197,3 +197,7 @@ cython_debug/
 
 # Ignore MLflow experiment logs
 mlruns/
+
+# Conda environment files
+environment.yml
+dev_environment.yml
